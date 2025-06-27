@@ -1,0 +1,81 @@
+//@version=5
+strategy("EMA 21/55/144 多空趋势阶段", overlay=true, margin_long=100, margin_short=100)
+
+// ===== 参数设置 =====
+// 均线周期参数
+ema21_len = input.int(21, "21EMA周期", minval=1)
+ema55_len = input.int(55, "55EMA周期", minval=1)
+ema144_len = input.int(144, "144EMA周期", minval=1)
+
+// 趋势阶段阈值参数
+early_threshold = input.float(5.0, "初期阈值(%)", minval=0.1, step=0.1)
+mid_threshold = input.float(15.0, "中期阈值(%)", minval=0.1, step=0.1)
+long_distance = input.float(10.0, "长期均线距离(%)", minval=0.1, step=0.1)
+
+// 可视化参数
+show_labels = input.bool(true, "显示阶段标签")
+show_background = input.bool(true, "显示背景色")
+
+// ===== 指标计算 =====
+// 计算均线
+ema21 = ta.ema(close, ema21_len)
+ema55 = ta.ema(close, ema55_len)
+ema144 = ta.ema(close, ema144_len)
+
+// 趋势方向判断
+bullish = ema21 > ema55 and ema55 > ema144
+bearish = ema21 < ema55 and ema55 < ema144
+
+// 价格与均线距离（百分比）
+priceToEma21 = math.abs(close - ema21) / ema21 * 100
+priceToEma144 = math.abs(close - ema144) / ema144 * 100
+
+// ===== 趋势阶段判断 =====
+// 多头趋势阶段
+bullEarly = bullish and priceToEma21 < early_threshold and priceToEma144 > long_distance
+bullMid = bullish and priceToEma21 >= early_threshold and priceToEma21 < mid_threshold
+bullLate = bullish and priceToEma21 >= mid_threshold
+
+// 空头趋势阶段
+bearEarly = bearish and priceToEma21 < early_threshold and priceToEma144 > long_distance
+bearMid = bearish and priceToEma21 >= early_threshold and priceToEma21 < mid_threshold
+bearLate = bearish and priceToEma21 >= mid_threshold
+
+// ===== 可视化 =====
+// 绘制均线
+plot(ema21, "EMA 21", color=color.new(#2962FF, 0), linewidth=2)
+plot(ema55, "EMA 55", color=color.new(#FF6D00, 0), linewidth=2)
+plot(ema144, "EMA 144", color=color.new(#FF1744, 0), linewidth=2)
+
+// 背景色标记趋势阶段
+if show_background
+    bgcolor(bullEarly ? color.new(#00C853, 90) : bullMid ? color.new(#00E676, 70) : bullLate ? color.new(#69F0AE, 50) : na)
+    bgcolor(bearEarly ? color.new(#D50000, 90) : bearMid ? color.new(#FF5252, 70) : bearLate ? color.new(#FF8A80, 50) : na)
+
+// 图表标记
+if show_labels
+    plotshape(bullEarly, style=shape.labelup, location=location.belowbar, color=#00C853, text="多初期", textcolor=color.white, size=size.small)
+    plotshape(bullMid, style=shape.labelup, location=location.belowbar, color=#0091EA, text="多中期", textcolor=color.white, size=size.small)
+    plotshape(bullLate, style=shape.labelup, location=location.belowbar, color=#6200EA, text="多末期", textcolor=color.white, size=size.small)
+    
+    plotshape(bearEarly, style=shape.labeldown, location=location.abovebar, color=#D50000, text="空初期", textcolor=color.white, size=size.small)
+    plotshape(bearMid, style=shape.labeldown, location=location.abovebar, color=#FFAB00, text="空中期", textcolor=color.white, size=size.small)
+    plotshape(bearLate, style=shape.labeldown, location=location.abovebar, color=#DD2C00, text="空末期", textcolor=color.white, size=size.small)
+
+// ===== 策略逻辑 =====
+// 多头交易
+if bullEarly
+    strategy.entry("Buy", strategy.long, comment="多头入场")
+else if bullLate
+    strategy.close("Buy", comment="多头平仓")
+
+// 空头交易
+if bearEarly
+    strategy.entry("Sell", strategy.short, comment="空头入场")
+else if bearLate
+    strategy.close("Sell", comment="空头平仓")
+
+// ===== 警报条件 =====
+alertcondition(bullEarly, "多头初期信号", "21/55/144EMA多头排列初期")
+alertcondition(bearEarly, "空头初期信号", "21/55/144EMA空头排列初期")
+alertcondition(bullLate or bearLate, "趋势末期信号", "趋势进入末期阶段")
