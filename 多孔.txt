@@ -1,0 +1,100 @@
+//@version=5
+strategy("智能多空反转策略", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=20)
+
+// ===== 用户可调参数 =====
+// 均线参数
+fastMA_len = input.int(13, "快速均线周期", group="均线设置", tooltip="建议13-21周期")
+slowMA_len = input.int(48, "慢速均线周期", group="均线设置", tooltip="建议48-89周期")
+
+// RSI参数
+rsi_len = input.int(14, "RSI周期", group="RSI设置")
+rsi_upper = input.int(65, "RSI超买线", group="RSI设置", minval=50, maxval=90)
+rsi_lower = input.int(35, "RSI超卖线", group="RSI设置", minval=10, maxval=50)
+
+// 交易参数
+confirm_bars = input.int(2, "信号确认K线数", group="交易设置")
+stop_loss = input.float(1.5, "止损百分比%", group="交易设置", step=0.1)
+take_profit = input.float(3.0, "止盈百分比%", group="交易设置", step=0.1)
+
+// 可视化参数
+show_bg = input.bool(true, "显示趋势背景", group="可视化")
+show_lines = input.bool(true, "显示趋势线", group="可视化")
+
+// ===== 核心计算 =====
+// 计算指标
+fastMA = ta.ema(close, fastMA_len)
+slowMA = ta.ema(close, slowMA_len)
+rsi = ta.rsi(close, rsi_len)
+
+// 趋势判断
+uptrend = fastMA > slowMA and close > slowMA
+downtrend = fastMA < slowMA and close < slowMA
+
+// 反转信号检测
+bullishSignal = 
+    (ta.crossover(fastMA, slowMA) or 
+    (ta.crossover(close, slowMA) and rsi > rsi_lower)) and
+    downtrend[1]
+
+bearishSignal = 
+    (ta.crossunder(fastMA, slowMA) or 
+    (ta.crossunder(close, slowMA) and rsi < rsi_upper)) and
+    uptrend[1]
+
+// 信号确认（K线收盘确认）
+confirmedBullish = bullishSignal and (close > close[1])
+confirmedBearish = bearishSignal and (close < close[1])
+
+// ===== 专业可视化 =====
+// 均线绘制
+plot(fastMA, "快速均线", color.new(#2196F3, 0), 2)
+plot(slowMA, "慢速均线", color.new(#FF9800, 0), 2)
+
+// 智能背景色
+bgcolor(show_bg ? (uptrend ? color.new(#4CAF50, 85) : downtrend ? color.new(#F44336, 85) : na) : na)
+
+// 反转信号标记
+plotshape(confirmedBullish, "多头反转", shape.labelup, location.belowbar, 
+     color=color.new(#00C853, 0), text="多头\n反转", textcolor=color.white, size=size.normal)
+plotshape(confirmedBearish, "空头反转", shape.labeldown, location.abovebar, 
+     color=color.new(#FF5252, 0), text="空头\n反转", textcolor=color.white, size=size.normal)
+
+// 动态趋势线
+var line bullTrendLine = na
+var line bearTrendLine = na
+if show_lines
+    if confirmedBullish
+        bullTrendLine := line.new(bar_index, low, bar_index + 30, low, 
+             color=color.new(#00C853, 50), width=2, style=line.style_dashed)
+    if confirmedBearish
+        bearTrendLine := line.new(bar_index, high, bar_index + 30, high, 
+             color=color.new(#FF5252, 50), width=2, style=line.style_dashed)
+
+// ===== 专业交易逻辑 =====
+// 多头交易
+if confirmedBullish
+    strategy.entry("Long", strategy.long, 
+         alert_message="多头入场(" + syminfo.ticker + 
+         ") 价格:" + str.tostring(close) + 
+         " RSI:" + str.tostring(rsi, "#.##"))
+
+// 空头交易
+if confirmedBearish
+    strategy.entry("Short", strategy.short, 
+         alert_message="空头入场(" + syminfo.ticker + 
+         ") 价格:" + str.tostring(close) + 
+         " RSI:" + str.tostring(rsi, "#.##"))
+
+// 智能风控
+strategy.exit("Long Exit", "Long", 
+     stop=close * (1 - stop_loss/100), 
+     limit=close * (1 + take_profit/100))
+strategy.exit("Short Exit", "Short", 
+     stop=close * (1 + stop_loss/100), 
+     limit=close * (1 - take_profit/100))
+
+// ===== 智能警报 =====
+alertcondition(confirmedBullish, "多头反转信号", 
+     "{{ticker}} 多头反转信号\n价格:{{close}}\nRSI:{{rsi}}")
+alertcondition(confirmedBearish, "空头反转信号", 
+     "{{ticker}} 空头反转信号\n价格:{{close}}\nRSI:{{rsi}}")
