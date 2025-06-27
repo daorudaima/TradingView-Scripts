@@ -1,0 +1,33 @@
+//@version=5
+strategy("EMA 21/55/144 多空趋势阶段", overlay=true)
+ema21 = ta.ema(close, 21)
+ema55 = ta.ema(close, 55)
+ema144 = ta.ema(close, 144)
+bullish = ema21 > ema55 and ema55 > ema144
+bearish = ema21 < ema55 and ema55 < ema144
+priceToEma21 = math.abs(close - ema21) / ema21 * 100
+priceToEma144 = math.abs(close - ema144) / ema144 * 100
+bullEarly = bullish and priceToEma21 < 5 and priceToEma144 > 10
+bullMid = bullish and priceToEma21 >= 5 and priceToEma21 < 15
+bullLate = bullish and priceToEma21 >= 15
+bearEarly = bearish and priceToEma21 < 5 and priceToEma144 > 10
+bearMid = bearish and priceToEma21 >= 5 and priceToEma21 < 15
+bearLate = bearish and priceToEma21 >= 15
+plot(ema21, "EMA 21", color=color.new(color.blue, 0), linewidth=2)
+plot(ema55, "EMA 55", color=color.new(color.orange, 0), linewidth=2)
+plot(ema144, "EMA 144", color=color.new(color.red, 0), linewidth=2)
+bgcolor(bullEarly ? color.new(color.green, 90) : bullMid ? color.new(color.green, 70) : bullLate ? color.new(color.green, 50) : na)
+bgcolor(bearEarly ? color.new(color.red, 90) : bearMid ? color.new(color.red, 70) : bearLate ? color.new(color.red, 50) : na)
+plotshape(bullEarly, style=shape.labelup, location=location.belowbar, color=color.green, text="多初期", textcolor=color.white)
+plotshape(bullMid, style=shape.labelup, location=location.belowbar, color=color.blue, text="多中期", textcolor=color.white)
+plotshape(bullLate, style=shape.labelup, location=location.belowbar, color=color.purple, text="多末期", textcolor=color.white)
+
+plotshape(bearEarly, style=shape.labeldown, location=location.abovebar, color=color.red, text="空初期", textcolor=color.white)
+plotshape(bearMid, style=shape.labeldown, location=location.abovebar, color=color.orange, text="空中期", textcolor=color.white)
+plotshape(bearLate, style=shape.labeldown, location=location.abovebar, color=color.maroon, text="空末期", textcolor=color.white)
+if bullEarly
+    strategy.entry("多头入场", strategy.long)
+if bearEarly
+    strategy.entry("空头入场", strategy.short)
+if bullLate or bearLate
+    strategy.close_all("趋势末期平仓")
