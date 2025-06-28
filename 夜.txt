@@ -1,0 +1,72 @@
+//@version=5
+indicator("ICT+SMC+道氏理论复合指标", overlay=true, shorttitle="ICT-SMC-Dow", precision=2)
+
+// ———— 输入参数 ————
+smcLookback = input.int(20, title="SMC周期长度", minval=5)
+showFibs = input(true, title="显示ICT斐波那契水平")
+dowConfirm = input.int(3, title="道氏趋势确认柱数", minval=1)
+volFilter = input(true, title="启用成交量过滤")
+showLiqPools = input(true, title="显示流动性池")
+
+// ———— 1. SMC聪明钱逻辑 ————
+var float smcHigh = na
+var float smcLow = na
+var float smcMid = na
+
+smcHigh := ta.highest(high, smcLookback)
+smcLow := ta.lowest(low, smcLookback)
+smcMid := math.avg(smcHigh, smcLow)
+
+// 突破信号（带成交量过滤）
+breakoutUp = ta.crossover(close, smcHigh) and (not volFilter or volume > ta.sma(volume, 20))
+breakoutDown = ta.crossunder(close, smcLow) and (not volFilter or volume > ta.sma(volume, 20))
+
+// ———— 2. ICT订单流逻辑 ————
+var float recentHigh = na
+var float recentLow = na
+recentHigh := ta.highest(high, 5)
+recentLow := ta.lowest(low, 5)
+
+// 斐波那契水平计算
+fib618 = math.avg(recentHigh, recentLow) + (recentHigh - recentLow) * 0.618
+fib382 = math.avg(recentHigh, recentLow) + (recentHigh - recentLow) * 0.382
+
+// ———— 3. 道氏理论趋势确认 ————
+dowUptrend = close > ta.highest(high, dowConfirm)[1] 
+dowDowntrend = close < ta.lowest(low, dowConfirm)[1]
+
+// ———— 综合信号生成 ————
+buySignal = breakoutUp and (close > fib382) and dowUptrend
+sellSignal = breakoutDown and (close < fib618) and dowDowntrend
+
+// ———— 增强可视化 ————
+// SMC水平线
+p1 = plot(smcHigh, color=color.new(color.red, 50), title="SMC阻力", linewidth=1)
+p2 = plot(smcLow, color=color.new(color.green, 50), title="SMC支撑", linewidth=1)
+plot(smcMid, color=color.gray, title="SMC中轴", linewidth=1)
+
+// ICT斐波那契
+plot(showFibs ? fib618 : na, color=color.purple, title="ICT 0.618", linewidth=2, style=plot.style_circles)
+plot(showFibs ? fib382 : na, color=color.blue, title="ICT 0.382", linewidth=2, style=plot.style_circles)
+
+// 流动性池标记
+plotshape(showLiqPools and (liqPoolUp == high), title="流动性池高点", 
+     location=location.abovebar, color=color.red, style=shape.triangledown, size=size.small)
+plotshape(showLiqPools and (liqPoolDown == low), title="流动性池低点", 
+     location=location.belowbar, color=color.green, style=shape.triangleup, size=size.small)
+
+// 增强信号显示
+plotshape(buySignal, title="买入信号", location=location.belowbar, 
+     color=color.green, style=shape.triangleup, size=size.normal, 
+     text="▲", textcolor=color.white)
+plotshape(sellSignal, title="卖出信号", location=location.abovebar, 
+     color=color.red, style=shape.triangledown, size=size.normal, 
+     text="▼", textcolor=color.white)
+
+// 趋势背景色
+bgcolor(dowUptrend ? color.new(color.green, 90) : dowDowntrend ? color.new(color.red, 90) : na, 
+     title="趋势背景")
+
+// 警报条件
+alertcondition(buySignal, title="买入信号警报", message="出现买入信号")
+alertcondition(sellSignal, title="卖出信号警报", message="出现卖出信号")
