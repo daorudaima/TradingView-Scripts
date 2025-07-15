@@ -1,0 +1,69 @@
+//@version=5
+indicator("增强版Pinbar检测器", overlay=true, shorttitle="Pinbar+")
+
+// 输入参数
+showBullish = input.bool(true, "显示看涨Pinbar", group="显示设置")
+showBearish = input.bool(true, "显示看跌Pinbar", group="显示设置")
+bodyMaxPercent = input.float(30, "最大实体比例(%)", minval=1, maxval=100, group="Pinbar参数")
+wickMinPercent = input.float(70, "最小影线比例(%)", minval=1, maxval=100, group="Pinbar参数")
+wickRatio = input.float(3, "影线比例倍数", minval=1, group="Pinbar参数")
+showAlerts = input.bool(true, "启用警报", group="警报设置")
+showLabels = input.bool(true, "显示标签", group="显示设置")
+highlightBackground = input.bool(true, "高亮背景", group="显示设置")
+
+// 计算比例参数
+bodyRatioMax = bodyMaxPercent / 100
+wickRatioMin = wickMinPercent / 100
+
+// 计算K线各部分
+bodySize = math.abs(close - open)
+totalRange = high - low
+
+// 防止除以零错误
+bodyRatio = totalRange > 0 ? bodySize / totalRange : 0
+upperRatio = totalRange > 0 ? (high - math.max(open, close)) / totalRange : 0
+lowerRatio = totalRange > 0 ? (math.min(open, close) - low) / totalRange : 0
+
+// 检测看涨Pinbar（长下影）
+isBullishPin = (lowerRatio >= wickRatioMin) and 
+               (bodyRatio <= bodyRatioMax) and 
+               (lowerRatio > wickRatio * upperRatio) and
+               (close > open)  // 确保是阳线
+
+// 检测看跌Pinbar（长上影）
+isBearishPin = (upperRatio >= wickRatioMin) and 
+               (bodyRatio <= bodyRatioMax) and 
+               (upperRatio > wickRatio * lowerRatio) and
+               (close < open)  // 确保是阴线
+
+// 在图表上标记
+plotshape(showBullish and isBullishPin, style=shape.triangleup, location=location.belowbar, 
+          color=color.new(color.green, 0), size=size.small, title="看涨Pinbar")
+plotshape(showBearish and isBearishPin, style=shape.triangledown, location=location.abovebar, 
+          color=color.new(color.red, 0), size=size.small, title="看跌Pinbar")
+
+// 添加标签
+if showLabels
+    if isBullishPin
+        label.new(bar_index, low, text="看涨\nPinbar", 
+                 style=label.style_label_up, color=color.green, 
+                 textcolor=color.white, yloc=yloc.belowbar)
+    if isBearishPin
+        label.new(bar_index, high, text="看跌\nPinbar", 
+                 style=label.style_label_down, color=color.red, 
+                 textcolor=color.white, yloc=yloc.abovebar)
+
+// 高亮背景
+bgcolor(highlightBackground and isBullishPin ? color.new(color.green, 90) : 
+        highlightBackground and isBearishPin ? color.new(color.red, 90) : na)
+
+// 警报条件
+if showAlerts
+    alertcondition(isBullishPin, "看涨Pinbar出现", "检测到看涨反转信号！")
+    alertcondition(isBearishPin, "看跌Pinbar出现", "检测到看跌反转信号！")
+
+// 在状态栏显示信息
+var table pinbarTable = table.new(position.bottom_right, 1, 1)
+if barstate.islast
+    table.cell(pinbarTable, 0, 0, "Pinbar检测器已激活\n参数设置:\n实体<"+str.tostring(bodyMaxPercent)+"%\n影线>"+str.tostring(wickMinPercent)+"%", 
+              bgcolor=color.new(color.blue, 90), text_color=color.white)
