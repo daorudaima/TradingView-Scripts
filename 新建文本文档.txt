@@ -1,80 +1,48 @@
 //@version=5
-strategy("趋势多空反转系统", overlay=true, margin_long=100, margin_short=100)
+indicator("Pinbar Detector", overlay=true)
 
-// ===== 参数设置 =====
-fastLength = input.int(13, "快速均线周期", minval=1)
-slowLength = input.int(48, "慢速均线周期", minval=1)
-rsiLength = input.int(14, "RSI周期", minval=1)
-rsiOverbought = input.int(70, "RSI超买线", minval=50, maxval=90)
-rsiOversold = input.int(30, "RSI超卖线", minval=10, maxval=50)
-confirmBars = input.int(2, "确认K线数", minval=1)
+// Input parameters
+length = input.int(14, title="Lookback Period", minval=1)
+bodyPercent = input.float(30.0, title="Max Body Percentage", minval=1, maxval=100) / 100
+wickPercent = input.float(70.0, title="Min Wick Percentage", minval=1, maxval=100) / 100
+showLabels = input.bool(true, title="Show Labels")
+showArrows = input.bool(true, title="Show Arrows")
 
-// ===== 指标计算 =====
-// 双均线系统
-fastMA = ta.ema(close, fastLength)
-slowMA = ta.ema(close, slowLength)
+// Calculate candle components
+bodySize = math.abs(close - open)
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
+totalRange = high - low
 
-// RSI指标
-rsiValue = ta.rsi(close, rsiLength)
+// Pinbar conditions
+isPinbar = false
+isBullishPinbar = false
+isBearishPinbar = false
 
-// 趋势方向判断
-uptrend = fastMA > slowMA and close > slowMA
-downtrend = fastMA < slowMA and close < slowMA
+if totalRange > 0
+    bodyRatio = bodySize / totalRange
+    upperWickRatio = upperWick / totalRange
+    lowerWickRatio = lowerWick / totalRange
+    
+    // Bullish pinbar (hammer-like)
+    isBullishPinbar := lowerWickRatio >= wickPercent and bodyRatio <= bodyPercent and close > open
+    
+    // Bearish pinbar (shooting star-like)
+    isBearishPinbar := upperWickRatio >= wickPercent and bodyRatio <= bodyPercent and close < open
+    
+    isPinbar := isBullishPinbar or isBearishPinbar
 
-// ===== 反转信号检测 =====
-// 多头反转条件（下跌转上涨）
-bullishReversal = 
-    (ta.crossover(fastMA, slowMA) or 
-    (ta.crossover(close, slowMA) and rsiValue > rsiOversold)) and
-    downtrend[1] and
-    (close > open or close > close[1])
+// Plotting
+plotshape(isBullishPinbar and showArrows, style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, title="Bullish Pinbar")
+plotshape(isBearishPinbar and showArrows, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, title="Bearish Pinbar")
 
-// 空头反转条件（上涨转下跌）
-bearishReversal = 
-    (ta.crossunder(fastMA, slowMA) or 
-    (ta.crossunder(close, slowMA) and rsiValue < rsiOverbought)) and
-    uptrend[1] and
-    (close < open or close < close[1])
+if showLabels and isPinbar
+    label.new(bar_index, isBullishPinbar ? low : high, 
+              text=isBullishPinbar ? "Bull Pin" : "Bear Pin", 
+              style=isBullishPinbar ? label.style_label_up : label.style_label_down,
+              color=isBullishPinbar ? color.green : color.red,
+              textcolor=color.white,
+              yloc=isBullishPinbar ? yloc.belowbar : yloc.abovebar)
 
-// 信号确认（需连续N根K线确认）
-confirmedBullish = ta.barssince(bullishReversal) <= confirmBars and bullishReversal
-confirmedBearish = ta.barssince(bearishReversal) <= confirmBars and bearishReversal
-
-// ===== 可视化 =====
-// 绘制均线
-plot(fastMA, "快速均线", color=color.new(#2196F3, 0), linewidth=2)
-plot(slowMA, "慢速均线", color=color.new(#FF9800, 0), linewidth=2)
-
-// 绘制趋势背景
-bgcolor(uptrend ? color.new(color.green, 90) : downtrend ? color.new(color.red, 90) : na)
-
-// 反转信号标记
-plotshape(confirmedBullish, "多头反转", shape.labelup, location.belowbar, 
-     color=color.new(#4CAF50, 0), textcolor=color.white, text="↑反转", size=size.normal)
-plotshape(confirmedBearish, "空头反转", shape.labeldown, location.abovebar, 
-     color=color.new(#F44336, 0), textcolor=color.white, text="↓反转", size=size.normal)
-
-// 趋势线绘制
-var line bullLine = na
-var line bearLine = na
-if confirmedBullish
-    bullLine := line.new(bar_index, low, bar_index + 50, low, 
-         color=color.new(#4CAF50, 70), width=2, style=line.style_dashed)
-if confirmedBearish
-    bearLine := line.new(bar_index, high, bar_index + 50, high, 
-         color=color.new(#F44336, 70), width=2, style=line.style_dashed)
-
-// ===== 交易策略 =====
-if confirmedBullish
-    strategy.entry("多头", strategy.long)
-if confirmedBearish
-    strategy.entry("空头", strategy.short)
-
-// 止损止盈
-strategy.exit("多单止损", "多头", stop=low[1] * 0.99, limit=close * 1.03)
-strategy.exit("空单止损", "空头", stop=high[1] * 1.01, limit=close * 0.97)
-
-// ===== 警报条件 =====
-alertcondition(confirmedBullish, "多头反转信号", "检测到多头反转")
-alertcondition(confirmedBearish, "空头反转信号", "检测到空头反转")
-
+// Optional: Background highlight for pinbars
+bgcolor(isPinbar ? color.new(isBullishPinbar ? color.green : color.red, 90) : na)
