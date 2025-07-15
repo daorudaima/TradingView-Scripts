@@ -1,0 +1,134 @@
+//@version=5
+indicator("高级反转信号检测", overlay=true, shorttitle="反转信号+")
+
+// 输入参数
+showPinbar = input.bool(true, "显示Pinbar信号", group="信号类型")
+showEngulfing = input.bool(true, "显示吞没形态", group="信号类型")
+showDoji = input.bool(true, "显示十字星", group="信号类型")
+showHammer = input.bool(true, "显示锤子线", group="信号类型")
+showShootingStar = input.bool(true, "显示射击之星", group="信号类型")
+
+bodyMaxPercent = input.float(30, "最大实体比例(%)", minval=1, maxval=100, group="参数设置")
+wickMinPercent = input.float(70, "最小影线比例(%)", minval=1, maxval=100, group="参数设置")
+wickRatio = input.float(3, "影线比例倍数", minval=1, group="参数设置")
+minBodySize = input.float(0.0005, "最小实体大小", group="参数设置")
+
+showAlerts = input.bool(true, "启用警报", group="警报设置")
+showLabels = input.bool(true, "显示标签", group="显示设置")
+highlightBackground = input.bool(true, "高亮背景", group="显示设置")
+
+// 计算比例参数
+bodyRatioMax = bodyMaxPercent / 100
+wickRatioMin = wickMinPercent / 100
+
+// 计算K线各部分
+bodySize = math.abs(close - open)
+totalRange = high - low
+
+// 防止除以零错误
+bodyRatio = totalRange > 0 ? bodySize / totalRange : 0
+upperRatio = totalRange > 0 ? (high - math.max(open, close)) / totalRange : 0
+lowerRatio = totalRange > 0 ? (math.min(open, close) - low) / totalRange : 0
+
+// 1. Pinbar信号检测
+isBullishPin = showPinbar and (lowerRatio >= wickRatioMin) and 
+               (bodyRatio <= bodyRatioMax) and 
+               (lowerRatio > wickRatio * upperRatio) and
+               (close > open) and
+               (bodySize >= minBodySize)
+
+isBearishPin = showPinbar and (upperRatio >= wickRatioMin) and 
+               (bodyRatio <= bodyRatioMax) and 
+               (upperRatio > wickRatio * lowerRatio) and
+               (close < open) and
+               (bodySize >= minBodySize)
+
+// 2. 吞没形态检测
+bullishEngulfing = showEngulfing and (close[1] < open[1]) and 
+                  (open < close) and 
+                  (close > open[1]) and 
+                  (open < close[1])
+
+bearishEngulfing = showEngulfing and (close[1] > open[1]) and 
+                  (open > close) and 
+                  (close < open[1]) and 
+                  (open > close[1])
+
+// 3. 十字星检测
+isDoji = showDoji and (bodyRatio <= 0.1) and (totalRange >= ta.atr(14) * 0.5)
+
+// 4. 锤子线检测
+isHammer = showHammer and (lowerRatio >= 0.6) and 
+           (bodyRatio <= 0.3) and 
+           (upperRatio <= 0.1) and
+           (close > open) and
+           (math.avg(high, low) < close)
+
+// 5. 射击之星检测
+isShootingStar = showShootingStar and (upperRatio >= 0.6) and 
+                (bodyRatio <= 0.3) and 
+                (lowerRatio <= 0.1) and
+                (close < open) and
+                (math.avg(high, low) > close)
+
+// 综合看涨/看跌信号
+bullishSignal = isBullishPin or bullishEngulfing or isDoji or isHammer
+bearishSignal = isBearishPin or bearishEngulfing or isDoji or isShootingStar
+
+// 在图表上标记
+plotshape(bullishSignal, style=shape.triangleup, location=location.belowbar, 
+          color=color.new(#00FF00, 0), size=size.small, title="看涨信号")
+plotshape(bearishSignal, style=shape.triangledown, location=location.abovebar, 
+          color=color.new(#FF0000, 0), size=size.small, title="看跌信号")
+
+// 添加标签
+if showLabels
+    if bullishSignal
+        labelText = ""
+        if isBullishPin
+            labelText := labelText + "Pinbar\n"
+        if bullishEngulfing
+            labelText := labelText + "吞没\n"
+        if isDoji
+            labelText := labelText + "十字星\n"
+        if isHammer
+            labelText := labelText + "锤子线"
+        
+        label.new(bar_index, low, text=labelText, 
+                 style=label.style_label_up, color=color.green, 
+                 textcolor=color.white, yloc=yloc.belowbar)
+    
+    if bearishSignal
+        labelText = ""
+        if isBearishPin
+            labelText := labelText + "Pinbar\n"
+        if bearishEngulfing
+            labelText := labelText + "吞没\n"
+        if isDoji
+            labelText := labelText + "十字星\n"
+        if isShootingStar
+            labelText := labelText + "射击之星"
+        
+        label.new(bar_index, high, text=labelText, 
+                 style=label.style_label_down, color=color.red, 
+                 textcolor=color.white, yloc=yloc.abovebar)
+
+// 高亮背景
+bgcolor(highlightBackground and bullishSignal ? color.new(color.green, 90) : 
+        highlightBackground and bearishSignal ? color.new(color.red, 90) : na)
+
+// 警报条件
+if showAlerts
+    alertcondition(bullishSignal, "看涨反转信号", "检测到看涨反转信号！")
+    alertcondition(bearishSignal, "看跌反转信号", "检测到看跌反转信号！")
+
+// 在状态栏显示信息
+var table signalTable = table.new(position.bottom_right, 1, 1)
+if barstate.islast
+    table.cell(signalTable, 0, 0, "反转信号检测器\n激活的信号类型:\n" +
+              (showPinbar ? "Pinbar " : "") +
+              (showEngulfing ? "吞没 " : "") +
+              (showDoji ? "十字星 " : "") +
+              (showHammer ? "锤子线 " : "") +
+              (showShootingStar ? "射击之星" : ""), 
+              bgcolor=color.new(color.purple, 90), text_color=color.white)
