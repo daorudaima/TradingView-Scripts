@@ -1,48 +1,97 @@
 //@version=5
-indicator("Pinbar Detector", overlay=true)
+strategy("高胜率+高盈亏比多空策略 [BTC/ETH]", 
+     overlay=true, 
+     initial_capital=10000, 
+     default_qty_type=strategy.percent_of_equity, 
+     default_qty_value=100, 
+     commission_type=strategy.commission.percent, 
+     commission_value=0.1,
+     pyramiding=0)
 
-// Input parameters
-length = input.int(14, title="Lookback Period", minval=1)
-bodyPercent = input.float(30.0, title="Max Body Percentage", minval=1, maxval=100) / 100
-wickPercent = input.float(70.0, title="Min Wick Percentage", minval=1, maxval=100) / 100
-showLabels = input.bool(true, title="Show Labels")
-showArrows = input.bool(true, title="Show Arrows")
+// ======================
+// === 输入参数设置 ===
+// ======================
+// 均线参数
+ma_short = input.int(20, title="短期均线 MA (如20)")
+ma_long = input.int(50, title="中期均线 MA (如50)")
+ma_trend = input.int(200, title="长期趋势均线 MA (如200)")
 
-// Calculate candle components
-bodySize = math.abs(close - open)
-upperWick = high - math.max(close, open)
-lowerWick = math.min(close, open) - low
-totalRange = high - low
+// RSI 参数
+rsi_length = input.int(14, title="RSI 周期")
+rsi_overbought = input.int(70, title="RSI 超买线")
+rsi_oversold = input.int(30, title="RSI 超卖线")
 
-// Pinbar conditions
-isPinbar = false
-isBullishPinbar = false
-isBearishPinbar = false
+// 止损止盈（可选用固定百分比或ATR）
+use_atr_stop = input.bool(true, title="使用 ATR 动态止损?")
+atr_length = input.int(14, title="ATR 周期")
+stop_multiplier = input.float(1.5, title="止损倍数 (如1.5)")
+take_profit_multiplier = input.float(2.0, title="止盈倍数 (如2.0)")
 
-if totalRange > 0
-    bodyRatio = bodySize / totalRange
-    upperWickRatio = upperWick / totalRange
-    lowerWickRatio = lowerWick / totalRange
-    
-    // Bullish pinbar (hammer-like)
-    isBullishPinbar := lowerWickRatio >= wickPercent and bodyRatio <= bodyPercent and close > open
-    
-    // Bearish pinbar (shooting star-like)
-    isBearishPinbar := upperWickRatio >= wickPercent and bodyRatio <= bodyPercent and close < open
-    
-    isPinbar := isBullishPinbar or isBearishPinbar
+fixed_stop_pct = input.float(1.0, title="固定止损百分比 (%)", step=0.1) / 100
+fixed_take_profit_pct = input.float(2.0, title="固定止盈百分比 (%)", step=0.1) / 100
 
-// Plotting
-plotshape(isBullishPinbar and showArrows, style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, title="Bullish Pinbar")
-plotshape(isBearishPinbar and showArrows, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.small, title="Bearish Pinbar")
+// ======================
+// === 指标计算 ===
+// ======================
+ma20 = ta.sma(close, ma_short)
+ma50 = ta.sma(close, ma_long)
+ma200 = ta.sma(close, ma_trend)
 
-if showLabels and isPinbar
-    label.new(bar_index, isBullishPinbar ? low : high, 
-              text=isBullishPinbar ? "Bull Pin" : "Bear Pin", 
-              style=isBullishPinbar ? label.style_label_up : label.style_label_down,
-              color=isBullishPinbar ? color.green : color.red,
-              textcolor=color.white,
-              yloc=isBullishPinbar ? yloc.belowbar : yloc.abovebar)
+rsi = ta.rsi(close, rsi_length)
 
-// Optional: Background highlight for pinbars
-bgcolor(isPinbar ? color.new(isBullishPinbar ? color.green : color.red, 90) : na)
+atr = ta.atr(atr_length)
+
+// 趋势判断
+is_uptrend = close > ma50 and ma50 > ma200
+is_downtrend = close < ma50 and ma50 < ma200
+
+// ======================
+// === 信号逻辑 ===
+// ======================
+// --- 做多信号 ---
+long_condition = false
+if (is_uptrend)
+    // 回踩均线附近 + RSI 不超买
+    long_condition := ta.crossover(close, ma20) and rsi < rsi_overbought and rsi > rsi_oversold
+
+// --- 做空信号 ---
+short_condition = false
+if (is_downtrend)
+    // 反弹均线附近 + RSI 不超卖
+    short_condition := ta.crossunder(close, ma20) and rsi > rsi_oversold and rsi < rsi_overbought
+
+// ======================
+// === 止损止盈计算 ===
+// ======================
+var float long_sl = na
+var float long_tp = na
+var float short_sl = na
+var float short_tp = na
+
+if (long_condition)
+    strategy.entry("Long", strategy.long)
+    long_sl := close * (1 - fixed_stop_pct)
+    long_tp := close * (1 + fixed_take_profit_pct)
+
+if (short_condition)
+    strategy.entry("Short", strategy.short)
+    short_sl := close * (1 + fixed_stop_pct)
+    short_tp := close * (1 - fixed_take_profit_pct)
+
+// ======================
+// === 策略出场 ===
+// ======================
+if (strategy.position_size > 0)  // 持有多单
+    strategy.exit("Long Exit", "Long", stop=long_sl, limit=long_tp)
+
+if (strategy.position_size < 0)  // 持有空单
+    strategy.exit("Short Exit", "Short", stop=short_sl, limit=short_tp)
+
+// ======================
+// === 可视化（可选）===
+// ======================
+plot(ma20, color=color.blue, title="MA20")
+plot(ma50, color=color.orange, title="MA50")
+plot(ma200, color=color.red, title="MA200")
+
+bgcolor(is_uptrend ? color.new(color.green, 90) : is_downtrend ? color.new(color.red, 90) : na)
